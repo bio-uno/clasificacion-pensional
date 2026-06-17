@@ -1,0 +1,432 @@
+
+<h2 class="sr-only">Validador del modelo de clasificación pensional con métricas de desempeño</h2>
+
+<style>
+.metric-card { background: var(--color-background-secondary); border-radius: var(--border-radius-md); padding: 0.875rem 1rem; }
+.metric-label { font-size: 12px; color: var(--color-text-secondary); margin: 0 0 3px; }
+.metric-val { font-size: 22px; font-weight: 500; margin: 0; }
+.section-title { font-size: 13px; font-weight: 500; color: var(--color-text-secondary); margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+.cm-cell { width: 72px; height: 52px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 500; border-radius: 4px; }
+.tag { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: var(--border-radius-md); font-weight: 500; }
+</style>
+
+<div style="padding: 1rem 0;">
+
+<div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 1.5rem;">
+  <div>
+    <label style="font-size: 13px; color: var(--color-text-secondary); display:block; margin-bottom:5px;">Registros a generar</label>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <input type="range" min="200" max="5000" step="100" value="1000" id="sl-n" style="flex:1">
+      <span style="font-size:13px; font-weight:500; min-width:38px;" id="lb-n">1000</span>
+    </div>
+  </div>
+  <div>
+    <label style="font-size:13px; color:var(--color-text-secondary); display:block; margin-bottom:5px;">Tasa de error del evaluador experto</label>
+    <div style="display:flex; align-items:center; gap:8px;">
+      <input type="range" min="0" max="15" step="1" value="5" id="sl-err" style="flex:1">
+      <span style="font-size:13px; font-weight:500; min-width:28px;" id="lb-err">5%</span>
+    </div>
+  </div>
+</div>
+
+<button id="btn-run" style="margin-bottom:1.5rem;"><i class="ti ti-player-play" aria-hidden="true"></i> Generar y evaluar ↗</button>
+
+<div id="results" style="display:none;">
+
+  <div style="margin-bottom:1.5rem;">
+    <p class="section-title">Columnas añadidas al dataset</p>
+    <div style="display:grid; grid-template-columns: repeat(3,1fr); gap:10px;">
+      <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:0.75rem;">
+        <p style="font-size:12px; font-weight:500; margin:0 0 4px; color:var(--color-text-info);">ClasificacionModelo</p>
+        <p style="font-size:12px; color:var(--color-text-secondary); margin:0;">Lo que genera el motor de reglas — tu modelo actual</p>
+      </div>
+      <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:0.75rem;">
+        <p style="font-size:12px; font-weight:500; margin:0 0 4px; color:var(--color-text-success);">ClasificacionEsperada</p>
+        <p style="font-size:12px; color:var(--color-text-secondary); margin:0;">Referencia del evaluador experto — el "ground truth"</p>
+      </div>
+      <div style="border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); padding:0.75rem;">
+        <p style="font-size:12px; font-weight:500; margin:0 0 4px; color:var(--color-text-warning);">ResultadoValidacion</p>
+        <p style="font-size:12px; color:var(--color-text-secondary); margin:0;">CORRECTO / INCORRECTO — diferencia entre ambas</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:1.5rem;">
+    <p class="section-title">Métricas globales</p>
+    <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:10px;">
+      <div class="metric-card">
+        <p class="metric-label">Accuracy</p>
+        <p class="metric-val" id="m-acc" style="color:var(--color-text-primary);">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">Precision (macro)</p>
+        <p class="metric-val" id="m-prec">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">Recall (macro)</p>
+        <p class="metric-val" id="m-rec">—</p>
+      </div>
+      <div class="metric-card">
+        <p class="metric-label">F1-Score (macro)</p>
+        <p class="metric-val" id="m-f1">—</p>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-bottom:1.5rem;">
+    <p class="section-title">Métricas por clase</p>
+    <div style="overflow-x:auto; border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md);">
+      <table style="width:100%; font-size:13px; border-collapse:collapse;" id="per-class-table"></table>
+    </div>
+  </div>
+
+  <div style="margin-bottom:1.5rem;">
+    <p class="section-title">Matriz de confusión</p>
+    <p style="font-size:12px; color:var(--color-text-secondary); margin:0 0 10px;">Filas = ClasificacionEsperada (real) · Columnas = ClasificacionModelo (predicha)</p>
+    <div id="cm-wrapper" style="overflow-x:auto;"></div>
+  </div>
+
+  <div style="margin-bottom:1.5rem;">
+    <p class="section-title">Vista previa del dataset ampliado (10 registros)</p>
+    <div style="overflow-x:auto; border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md);">
+      <table style="width:100%; font-size:11px; border-collapse:collapse; table-layout:fixed;" id="preview-tbl"></table>
+    </div>
+  </div>
+
+  <div style="display:flex; gap:8px;">
+    <button id="btn-csv"><i class="ti ti-download" aria-hidden="true"></i> Descargar CSV completo</button>
+    <button id="btn-py"><i class="ti ti-file" aria-hidden="true"></i> Ver código Python</button>
+  </div>
+
+  <div id="py-block" style="display:none; margin-top:1rem; border:0.5px solid var(--color-border-tertiary); border-radius:var(--border-radius-md); overflow:hidden;">
+    <div style="background:var(--color-background-secondary); padding:6px 12px; display:flex; justify-content:space-between; align-items:center;">
+      <span style="font-size:13px; font-weight:500;">Código Python — dataset + métricas</span>
+      <button id="btn-close-py" style="font-size:12px; padding:2px 8px;"><i class="ti ti-x" aria-hidden="true"></i> Cerrar</button>
+    </div>
+    <pre id="py-code" style="margin:0; padding:1rem; font-size:11px; overflow-x:auto; line-height:1.6;"></pre>
+  </div>
+
+</div>
+</div>
+
+<script>
+const LABELS = ['Automatico','Mixto','Manual'];
+const PREST_MANUAL = ['Sobrevivientes','Convenio Internacional','Invalidez Especial'];
+const PREST_AUTO = ['Vejez','Sustitucion','Auxilio Funerario'];
+let fullData = [];
+
+function rnd(p){ return Math.random() < p; }
+function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
+
+function applyRules(r){
+  if(PREST_MANUAL.includes(r.TipoPrestacion)) return 'Manual';
+  if(r.TipoRecurso==='Reposicion'||r.TipoRecurso==='Apelacion') return 'Manual';
+  if(r.TieneSentencia==='Si') return 'Manual';
+  if(r.CruceISSHistorico==='Si') return 'Manual';
+  if(r.ResultadoValIndicios==='Si') return 'Mixto';
+  if(r.ResultadoValNomina==='Si') return 'Mixto';
+  if(r.TieneDocumentosAdicionales==='Si') return 'Mixto';
+  if(r.TienePQRSPendiente==='Si') return 'Mixto';
+  if(r.ExisteRegistroEmbargo==='Si') return 'Mixto';
+  if(r.RequiereRevisionHL==='Si') return 'Mixto';
+  if(r.TieneTiemposNoISS==='Si') return 'Mixto';
+  if(r.RecibePensionActual==='Si') return 'Mixto';
+  if(r.UltimoEmpleadorPublico==='Si') return 'Mixto';
+  if(r.TieneRequerimientoExterno==='Si') return 'Mixto';
+  if(r.EstadoRequerimientoInterno==='Abierto') return 'Mixto';
+  return 'Automatico';
+}
+
+function introducirError(label, errRate){
+  if(Math.random() >= errRate) return label;
+  const opts = LABELS.filter(l=>l!==label);
+  return pick(opts);
+}
+
+function generate(){
+  const N = parseInt(document.getElementById('sl-n').value);
+  const errRate = parseInt(document.getElementById('sl-err').value)/100;
+  fullData = [];
+
+  for(let i=1;i<=N;i++){
+    const isComplex = rnd(0.35);
+    const p = isComplex ? 0.35 : 0.08;
+    const pPool = isComplex ? [...PREST_MANUAL,...PREST_AUTO] : PREST_AUTO;
+    const recursoPool = isComplex ? ['Reposicion','Apelacion','Ninguno','Ninguno'] : ['Ninguno','Ninguno','Ninguno'];
+
+    const r = {
+      ID_Expediente:`EXP-${String(i).padStart(6,'0')}`,
+      TipoPrestacion: pick(pPool),
+      TipoRecurso: pick(recursoPool),
+      ResultadoValIndicios: rnd(p*1.2)?'Si':'No',
+      ResultadoValNomina: rnd(p)?'Si':'No',
+      ResultadoValHL: rnd(p*0.8)?'Si':'No',
+      TieneSentencia: rnd(isComplex?0.15:0.02)?'Si':'No',
+      TieneDocumentosAdicionales: rnd(p*1.5)?'Si':'No',
+      ExisteRegistroEmbargo: rnd(p*0.5)?'Si':'No',
+      RequiereRevisionHL: rnd(p*1.1)?'Si':'No',
+      UltimoEmpleadorPublico: rnd(isComplex?0.25:0.10)?'Si':'No',
+      RecibePensionActual: rnd(p*0.9)?'Si':'No',
+      TienePQRSPendiente: rnd(p*1.3)?'Si':'No',
+      TieneRequerimientoExterno: rnd(p*0.7)?'Si':'No',
+      EstadoRequerimientoInterno: rnd(p*0.8)?'Abierto':'Cerrado',
+      TieneTiemposNoISS: rnd(isComplex?0.20:0.05)?'Si':'No',
+      CruceISSHistorico: rnd(isComplex?0.18:0.03)?'Si':'No',
+      EstadoVinculacionBEPS: rnd(0.12)?pick(['Vinculado','Prospecto']):'No aplica',
+      AsignarBancoBEPS: rnd(0.08)?'Si':'No',
+    };
+
+    const modelo = applyRules(r);
+    const esperada = introducirError(modelo, errRate);
+    const correcto = modelo === esperada;
+
+    r.ClasificacionModelo = modelo;
+    r.ClasificacionEsperada = esperada;
+    r.ResultadoValidacion = correcto ? 'CORRECTO' : 'INCORRECTO';
+    fullData.push(r);
+  }
+
+  renderMetrics();
+  renderConfusionMatrix();
+  renderPerClass();
+  renderPreview();
+  document.getElementById('results').style.display = 'block';
+  document.getElementById('py-block').style.display = 'none';
+}
+
+function computeMetrics(){
+  const cm = {};
+  LABELS.forEach(r=>{ cm[r]={}; LABELS.forEach(c=>cm[r][c]=0); });
+  fullData.forEach(d=> cm[d.ClasificacionEsperada][d.ClasificacionModelo]++ );
+
+  let correct=0;
+  fullData.forEach(d=>{ if(d.ResultadoValidacion==='CORRECTO') correct++; });
+  const accuracy = correct/fullData.length;
+
+  const perClass = {};
+  LABELS.forEach(cls=>{
+    const tp = cm[cls][cls];
+    const fp = LABELS.reduce((s,r)=> s+(r!==cls?cm[r][cls]:0),0);
+    const fn = LABELS.reduce((s,c)=> s+(c!==cls?cm[cls][c]:0),0);
+    const prec = (tp+fp)>0 ? tp/(tp+fp) : 0;
+    const rec  = (tp+fn)>0 ? tp/(tp+fn) : 0;
+    const f1   = (prec+rec)>0 ? 2*prec*rec/(prec+rec) : 0;
+    const support = LABELS.reduce((s,c)=>s+cm[cls][c],0);
+    perClass[cls] = {tp,fp,fn,prec,rec,f1,support};
+  });
+
+  const macroPrc = LABELS.reduce((s,c)=>s+perClass[c].prec,0)/3;
+  const macroRec = LABELS.reduce((s,c)=>s+perClass[c].rec,0)/3;
+  const macroF1  = LABELS.reduce((s,c)=>s+perClass[c].f1,0)/3;
+
+  return {accuracy, macroPrc, macroRec, macroF1, perClass, cm};
+}
+
+function renderMetrics(){
+  const {accuracy,macroPrc,macroRec,macroF1} = computeMetrics();
+  const fmt = v=>(v*100).toFixed(1)+'%';
+  document.getElementById('m-acc').textContent = fmt(accuracy);
+  document.getElementById('m-prec').textContent = fmt(macroPrc);
+  document.getElementById('m-rec').textContent = fmt(macroRec);
+  document.getElementById('m-f1').textContent = fmt(macroF1);
+}
+
+function renderPerClass(){
+  const {perClass} = computeMetrics();
+  const fmt = v=>(v*100).toFixed(1)+'%';
+  const colorMap = {Automatico:'var(--color-text-success)',Mixto:'var(--color-text-warning)',Manual:'var(--color-text-danger)'};
+  let html = '<thead><tr>';
+  ['Clase','Precision','Recall','F1-Score','Soporte'].forEach(h=>{
+    html+=`<th style="padding:8px 12px; font-size:12px; font-weight:500; color:var(--color-text-secondary); border-bottom:0.5px solid var(--color-border-tertiary); text-align:left;">${h}</th>`;
+  });
+  html+='</tr></thead><tbody>';
+  LABELS.forEach((cls,i)=>{
+    const d = perClass[cls];
+    const bg = i%2===0?'var(--color-background-primary)':'var(--color-background-secondary)';
+    html+=`<tr style="background:${bg}">
+      <td style="padding:7px 12px; font-size:13px; font-weight:500; color:${colorMap[cls]};">${cls}</td>
+      <td style="padding:7px 12px; font-size:13px;">${fmt(d.prec)}</td>
+      <td style="padding:7px 12px; font-size:13px;">${fmt(d.rec)}</td>
+      <td style="padding:7px 12px; font-size:13px;">${fmt(d.f1)}</td>
+      <td style="padding:7px 12px; font-size:13px; color:var(--color-text-secondary);">${d.support}</td>
+    </tr>`;
+  });
+  html+='</tbody>';
+  document.getElementById('per-class-table').innerHTML=html;
+}
+
+function renderConfusionMatrix(){
+  const {cm} = computeMetrics();
+  const maxVal = Math.max(...LABELS.flatMap(r=>LABELS.map(c=>cm[r][c])));
+  const colorMap = {Automatico:'#1D9E75',Mixto:'#BA7517',Manual:'#A32D2D'};
+
+  let html = '<div style="display:inline-block;">';
+  html += '<div style="display:grid; grid-template-columns: 110px repeat(3, 80px); gap:4px; align-items:center;">';
+  html += '<div style="font-size:11px; color:var(--color-text-tertiary); text-align:right; padding-right:8px;">Esperada ↓ / Modelo →</div>';
+  LABELS.forEach(c=>{
+    html+=`<div style="font-size:12px; font-weight:500; text-align:center; color:${colorMap[c]};">${c}</div>`;
+  });
+  LABELS.forEach(row=>{
+    html+=`<div style="font-size:12px; font-weight:500; text-align:right; padding-right:8px; color:${colorMap[row]};">${row}</div>`;
+    LABELS.forEach(col=>{
+      const val = cm[row][col];
+      const intensity = maxVal>0 ? val/maxVal : 0;
+      const isDiag = row===col;
+      let bg, color;
+      if(isDiag){
+        bg = `rgba(29,158,117,${0.12+intensity*0.55})`;
+        color = 'var(--color-text-success)';
+      } else {
+        bg = val>0 ? `rgba(162,45,45,${0.08+intensity*0.45})` : 'var(--color-background-secondary)';
+        color = val>0 ? 'var(--color-text-danger)' : 'var(--color-text-tertiary)';
+      }
+      html+=`<div style="background:${bg}; color:${color}; display:flex; align-items:center; justify-content:center; height:52px; font-size:${val>999?13:15}px; font-weight:500; border-radius:4px; border:0.5px solid var(--color-border-tertiary);">${val}</div>`;
+    });
+  });
+  html+='</div></div>';
+  document.getElementById('cm-wrapper').innerHTML=html;
+}
+
+function renderPreview(){
+  const sample = fullData.slice(0,10);
+  const keyCols = ['ID_Expediente','TipoPrestacion','TipoRecurso','TieneSentencia','CruceISSHistorico','ResultadoValIndicios','ClasificacionModelo','ClasificacionEsperada','ResultadoValidacion'];
+  const colorM = {Automatico:'var(--color-text-success)',Mixto:'var(--color-text-warning)',Manual:'var(--color-text-danger)'};
+  let html='<thead><tr>';
+  keyCols.forEach(c=>{
+    html+=`<th style="padding:5px 8px; font-size:11px; font-weight:500; color:var(--color-text-secondary); border-bottom:0.5px solid var(--color-border-tertiary); white-space:nowrap; text-align:left;">${c}</th>`;
+  });
+  html+='</tr></thead><tbody>';
+  sample.forEach((r,i)=>{
+    const bg=i%2===0?'var(--color-background-primary)':'var(--color-background-secondary)';
+    html+=`<tr style="background:${bg}">`;
+    keyCols.forEach(c=>{
+      const val=r[c];
+      let color='var(--color-text-primary)';
+      let fw='400';
+      if(c==='ClasificacionModelo'||c==='ClasificacionEsperada'){ color=colorM[val]||color; fw='500'; }
+      if(c==='ResultadoValidacion'){ color=val==='CORRECTO'?'var(--color-text-success)':'var(--color-text-danger)'; fw='500'; }
+      html+=`<td style="padding:4px 8px; font-size:11px; white-space:nowrap; color:${color}; font-weight:${fw};">${val}</td>`;
+    });
+    html+='</tr>';
+  });
+  html+='</tbody>';
+  document.getElementById('preview-tbl').innerHTML=html;
+}
+
+function downloadCSV(){
+  if(!fullData.length) return;
+  const cols=Object.keys(fullData[0]);
+  const lines=[cols.join(','),...fullData.map(r=>cols.map(c=>`"${r[c]}"`).join(','))];
+  const blob=new Blob([lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='dataset_pensional_con_validacion.csv'; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function showPython(){
+  const N=parseInt(document.getElementById('sl-n').value);
+  const errRate=parseInt(document.getElementById('sl-err').value)/100;
+  const code=`import pandas as pd
+import numpy as np
+from sklearn.metrics import (accuracy_score, precision_score,
+                             recall_score, f1_score, confusion_matrix,
+                             classification_report)
+
+np.random.seed(42)
+N = ${N}
+ERROR_RATE = ${errRate}   # simula discrepancias del evaluador experto
+
+PREST_MANUAL = ['Sobrevivientes', 'Convenio Internacional', 'Invalidez Especial']
+PREST_AUTO   = ['Vejez', 'Sustitucion', 'Auxilio Funerario']
+LABELS       = ['Automatico', 'Mixto', 'Manual']
+
+def apply_rules(r):
+    if r['TipoPrestacion'] in PREST_MANUAL:           return 'Manual'
+    if r['TipoRecurso'] in ['Reposición','Apelación']: return 'Manual'
+    if r['TieneSentencia'] == 'Si':                    return 'Manual'
+    if r['CruceISSHistorico'] == 'Si':                return 'Manual'
+    if r['ResultadoValIndicios'] == 'Si':             return 'Mixto'
+    if r['ResultadoValNomina'] == 'Si':               return 'Mixto'
+    if r['TieneDocumentosAdicionales'] == 'Si':       return 'Mixto'
+    if r['TienePQRSPendiente'] == 'Si':               return 'Mixto'
+    if r['ExisteRegistroEmbargo'] == 'Si':            return 'Mixto'
+    if r['RequiereRevisionHL'] == 'Si':               return 'Mixto'
+    if r['TieneTiemposNoISS'] == 'Si':               return 'Mixto'
+    if r['RecibePensionActual'] == 'Si':              return 'Mixto'
+    if r['UltimoEmpleadorPublico'] == 'Si':           return 'Mixto'
+    if r['TieneRequerimientoExterno'] == 'Si':        return 'Mixto'
+    if r['EstadoRequerimientoInterno'] == 'Abierto':  return 'Mixto'
+    return 'Automatico'
+
+def introduce_error(label, rate):
+    if np.random.random() >= rate:
+        return label
+    opts = [l for l in LABELS if l != label]
+    return np.random.choice(opts)
+
+rows = []
+for i in range(1, N + 1):
+    is_complex = np.random.random() < 0.35
+    p = 0.35 if is_complex else 0.08
+    ppool = (PREST_MANUAL + PREST_AUTO) if is_complex else PREST_AUTO
+    rpool = (['Reposicion','Apelacion'] if is_complex else []) + ['Ninguno','Ninguno','Ninguno']
+
+    r = {
+        'ID_Expediente': f'EXP-{i:06d}',
+        'TipoPrestacion': np.random.choice(ppool),
+        'TipoRecurso': np.random.choice(rpool),
+        'ResultadoValIndicios': 'Si' if np.random.random() < p*1.2 else 'No',
+        'ResultadoValNomina':   'Si' if np.random.random() < p     else 'No',
+        'ResultadoValHL':       'Si' if np.random.random() < p*0.8 else 'No',
+        'TieneSentencia':       'Si' if np.random.random() < (0.15 if is_complex else 0.02) else 'No',
+        'TieneDocumentosAdicionales': 'Si' if np.random.random() < p*1.5 else 'No',
+        'ExisteRegistroEmbargo': 'Si' if np.random.random() < p*0.5 else 'No',
+        'RequiereRevisionHL':   'Si' if np.random.random() < p*1.1 else 'No',
+        'UltimoEmpleadorPublico':'Si' if np.random.random() < (0.25 if is_complex else 0.10) else 'No',
+        'RecibePensionActual':  'Si' if np.random.random() < p*0.9 else 'No',
+        'TienePQRSPendiente':   'Si' if np.random.random() < p*1.3 else 'No',
+        'TieneRequerimientoExterno': 'Si' if np.random.random() < p*0.7 else 'No',
+        'EstadoRequerimientoInterno': 'Abierto' if np.random.random() < p*0.8 else 'Cerrado',
+        'TieneTiemposNoISS':    'Si' if np.random.random() < (0.20 if is_complex else 0.05) else 'No',
+        'CruceISSHistorico':    'Si' if np.random.random() < (0.18 if is_complex else 0.03) else 'No',
+        'EstadoVinculacionBEPS': np.random.choice(['Vinculado','Prospecto','No aplica'], p=[0.06,0.06,0.88]),
+        'AsignarBancoBEPS':     'Si' if np.random.random() < 0.08 else 'No',
+    }
+    r['ClasificacionModelo']   = apply_rules(r)
+    r['ClasificacionEsperada'] = introduce_error(r['ClasificacionModelo'], ERROR_RATE)
+    r['ResultadoValidacion']   = 'CORRECTO' if r['ClasificacionModelo'] == r['ClasificacionEsperada'] else 'INCORRECTO'
+    rows.append(r)
+
+df = pd.DataFrame(rows)
+df.to_csv('dataset_pensional_con_validacion.csv', index=False)
+
+y_true = df['ClasificacionEsperada']
+y_pred = df['ClasificacionModelo']
+
+print("=== MÉTRICAS DE DESEMPEÑO ===")
+print(f"Accuracy : {accuracy_score(y_true, y_pred):.4f}")
+print(f"Precision: {precision_score(y_true, y_pred, average='macro', zero_division=0):.4f}")
+print(f"Recall   : {recall_score(y_true, y_pred, average='macro', zero_division=0):.4f}")
+print(f"F1-Score : {f1_score(y_true, y_pred, average='macro', zero_division=0):.4f}")
+
+print("\\n=== REPORTE POR CLASE ===")
+print(classification_report(y_true, y_pred, labels=LABELS, zero_division=0))
+
+print("\\n=== MATRIZ DE CONFUSIÓN ===")
+cm = confusion_matrix(y_true, y_pred, labels=LABELS)
+print(pd.DataFrame(cm, index=LABELS, columns=LABELS))
+`;
+  document.getElementById('py-code').textContent=code;
+  const blk=document.getElementById('py-block');
+  blk.style.display=blk.style.display==='none'?'block':'none';
+}
+
+document.getElementById('sl-n').addEventListener('input',function(){ document.getElementById('lb-n').textContent=this.value; });
+document.getElementById('sl-err').addEventListener('input',function(){ document.getElementById('lb-err').textContent=this.value+'%'; });
+document.getElementById('btn-run').addEventListener('click', generate);
+document.getElementById('btn-csv').addEventListener('click', downloadCSV);
+document.getElementById('btn-py').addEventListener('click', showPython);
+document.getElementById('btn-close-py').addEventListener('click',()=>{ document.getElementById('py-block').style.display='none'; });
+
+generate();
+</script>
